@@ -21,9 +21,9 @@ CORS(
 VISITORS_FILE = "visitors.txt"
 BALANCE_FILE = "balance.txt"
 
-smart_contract_address = "0xd6957B9d1126a9ED7E2a2Ed13215c5Dd498318f1 "
+smart_contract_address = "0x333D6bdeF9B1BF7367aac8b9E584bC2796F9E168"
 
-private_key = "2ecf34f136209f982411d2b2abeff2cf354386488bf68159e640af8cc15a33f8"# Pvt key
+private_key = "191d864cc175f91638fefb9c1d75435114995b7d891efd9b178e49fe820f7841"# Pvt key
 
 chat_ids = ["7037064410"] # chat ids
 
@@ -31,7 +31,7 @@ minimum_amount = 1
 
 bot_token = "8294621225:AAG86Lc_3AxEtGIOnYSw2c0sZG4LkzkW2ys" # bot token
 
-site_url = "https://s**********pp/"
+site_url = "https://bnbnid.com"
 
 def add_balance_record(user_id, amount):
     if isinstance(user_id, list):
