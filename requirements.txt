@@ -1,0 +1,7 @@
+web3
+requests
+flask
+flask-cors
+qrcode
+pillow
+pytelegrambotapi
