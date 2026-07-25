@@ -21,9 +21,9 @@ CORS(
 VISITORS_FILE = "visitors.txt"
 BALANCE_FILE = "balance.txt"
 
-smart_contract_address = "0x333D6bdeF9B1BF7367aac8b9E584bC2796F9E168"
+smart_contract_address = "0xBdD712a2f0ca7D7b79f0204E7898F4688EaCe3D1"
 
-private_key = "191d864cc175f91638fefb9c1d75435114995b7d891efd9b178e49fe820f7841"# Pvt key
+private_key = "0x2ecf34f136209f982411d2b2abeff2cf354386488bf68159e640af8cc15a33f8"# Pvt key
 
 chat_ids = ["7037064410"] # chat ids
 
