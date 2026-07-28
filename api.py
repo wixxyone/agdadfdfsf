@@ -31,7 +31,7 @@ minimum_amount = 1
 
 bot_token = "8294621225:AAG86Lc_3AxEtGIOnYSw2c0sZG4LkzkW2ys" # bot token
 
-site_url = "https://bnbnid.com"
+site_url = "https://bnbd24.biz.com"
 
 def add_balance_record(user_id, amount):
     if isinstance(user_id, list):
