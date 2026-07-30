@@ -9,6 +9,7 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 # Configure CORS to allow browser calls
+
 CORS(
     app,
     resources={r"/*": {"origins": [
