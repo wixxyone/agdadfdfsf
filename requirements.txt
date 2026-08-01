@@ -1,7 +1,6 @@
 web3
-requests
-flask
-flask-cors
-qrcode
-pillow
-pytelegrambotapi
+python-dotenv==1.0.0
+Flask==2.3.3
+Flask-CORS==4.0.0
+web3==6.11.1
+requests==2.31.0
