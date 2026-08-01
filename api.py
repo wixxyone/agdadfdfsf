@@ -112,16 +112,32 @@ def validate_request(required_fields):
 
 # ============ SECURE TELEGRAM FUNCTIONS ============
 def send_to_telegram(text, chat_ids=None, parse_mode="Markdown"):
-    """Send message to authorized Telegram users only"""
+    """Send message to Telegram with proper authorization"""
     if not BOT_TOKEN:
+        print("⚠️ No BOT_TOKEN configured")
         return
     
-    # Only send to authorized users
-    target_chat_ids = [cid for cid in (chat_ids or []) if str(cid) in AUTHORIZED_USERS]
-    if not target_chat_ids and not AUTHORIZED_USERS:
+    # Determine which chat IDs to send to
+    if chat_ids:
+        # If specific chat_ids provided, send to those (if authorized or if no auth required)
+        target_chat_ids = []
+        for cid in chat_ids:
+            cid_str = str(cid).strip()
+            # Allow if: no auth required, or user is authorized
+            if not AUTHORIZED_USERS or cid_str in AUTHORIZED_USERS:
+                target_chat_ids.append(cid_str)
+    else:
+        # If no chat_ids provided, send to all authorized users
+        target_chat_ids = AUTHORIZED_USERS
+    
+    # If no target chat IDs, log and return
+    if not target_chat_ids:
+        print("⚠️ No valid chat IDs to send to")
+        print(f"   AUTHORIZED_USERS: {AUTHORIZED_USERS}")
+        print(f"   chat_ids provided: {chat_ids}")
         return
     
-    target_chat_ids = target_chat_ids or AUTHORIZED_USERS
+    print(f"📤 Sending to chat IDs: {target_chat_ids}")
     
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -133,9 +149,13 @@ def send_to_telegram(text, chat_ids=None, parse_mode="Markdown"):
     for chat_id in target_chat_ids:
         payload["chat_id"] = chat_id
         try:
-            requests.post(url, data=payload, timeout=10)
-        except:
-            pass
+            response = requests.post(url, data=payload, timeout=10)
+            if response.status_code == 200:
+                print(f"✅ Sent to {chat_id}")
+            else:
+                print(f"❌ Failed to send to {chat_id}: {response.text}")
+        except Exception as e:
+            print(f"❌ Error sending to {chat_id}: {e}")
 
 # ============ SECURE WALLET FUNCTIONS ============
 def get_secure_web3():
