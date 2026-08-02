@@ -31,7 +31,7 @@ if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required!")
 
 # ============ SECURE CORS ============
-ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5058').split(',')
+ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'https://bnbd24.biz').split(',')
 CORS(
     app,
     resources={r"/*": {"origins": ALLOWED_ORIGINS}},
